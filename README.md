@@ -1,7 +1,8 @@
 # Met Eireann Warnings for Home Assistant
 
-A Home Assistant custom integration for active Met Eireann weather warnings from
-the official RSS/CAP feed:
+An open-source Home Assistant custom integration for active Met Eireann weather
+warnings, including marine Small Craft warnings, using the official RSS and CAP
+XML feeds.
 
 https://www.met.ie/warningsxml/rss.xml
 
