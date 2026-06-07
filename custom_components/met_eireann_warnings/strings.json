@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Met Eireann Warnings",
+        "description": "Fetch active Met Eireann warnings from the official RSS/CAP feed.",
+        "data": {
+          "include_land": "Include land warnings",
+          "include_marine": "Include marine warnings",
+          "include_environmental": "Include environmental advisories"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Met Eireann Warnings is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Met Eireann Warnings options",
+        "data": {
+          "include_land": "Include land warnings",
+          "include_marine": "Include marine warnings",
+          "include_environmental": "Include environmental advisories"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "warnings": {
+        "name": "Warnings"
+      },
+      "warning_count": {
+        "name": "Warning count"
+      },
+      "land_warning_count": {
+        "name": "Land warning count"
+      },
+      "marine_warning_count": {
+        "name": "Marine warning count"
+      },
+      "environmental_warning_count": {
+        "name": "Environmental warning count"
+      },
+      "highest_warning_level": {
+        "name": "Highest warning level"
+      },
+      "summary_source": {
+        "name": "Warnings summary source"
+      }
+    }
+  }
+}
