@@ -80,7 +80,7 @@ attribute with parsed CAP warning data.
 Run the parser tests locally:
 
 ```bash
-cd /home/miharc/work/code/ha-met-eireann-warnings
+cd PATH_TO/ha-met-eireann-warnings
 python3 -m pytest -q tests/test_parser.py
 ```
 
