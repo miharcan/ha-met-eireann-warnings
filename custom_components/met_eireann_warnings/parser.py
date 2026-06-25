@@ -24,6 +24,21 @@ from .const import (
 
 CAP_NS = {"cap": "urn:oasis:names:tc:emergency:cap:1.2"}
 
+IMPACT_HEADINGS = (
+    "Potential impacts:",
+    "Possible impacts:",
+    "Impacts:",
+)
+
+SEVERITY_PREFIXES = (
+    LEVEL_YELLOW,
+    LEVEL_ORANGE,
+    LEVEL_RED,
+    "moderate",
+    "severe",
+    "extreme",
+)
+
 
 @dataclass(slots=True)
 class FeedItem:
@@ -59,8 +74,16 @@ class Warning:
     instruction: str | None
     area: str | None
     geocodes: list[str]
+    awareness_type: str | None
+    awareness_level: str | None
     link: str
     web: str | None
+    event_clean: str
+    display_title: str
+    display_line: str
+    display_summary: str
+    display_impacts: list[str]
+    display_risk: str
     source: str = "Met Eireann"
     duplicate_count: int = 0
     duplicate_identifiers: list[str] = field(default_factory=list)
@@ -106,8 +129,25 @@ def parse_cap(cap_xml: str, feed_item: FeedItem) -> Warning:
     description = _cap_text(info, "description") or feed_item.description
     area = _first_area_desc(info)
     geocodes = _geocodes(info)
+    parameters = _parameters(info)
+    awareness_type = parameters.get("awareness_type")
+    awareness_level = parameters.get("awareness_level")
     web = _cap_text(info, "web")
     event = _cap_text(info, "event")
+    event_clean = clean_event(event)
+    display_summary, display_impacts = split_description_and_impacts(description)
+    display_title = headline or feed_item.title or event_clean
+    display_line = build_display_line(
+        level=level,
+        area=area,
+        onset=_cap_text(info, "onset"),
+        expires=_cap_text(info, "expires"),
+    )
+    display_risk = build_display_risk(
+        severity=severity,
+        urgency=_cap_text(info, "urgency"),
+        certainty=_cap_text(info, "certainty"),
+    )
 
     return Warning(
         identifier=identifier,
@@ -128,8 +168,16 @@ def parse_cap(cap_xml: str, feed_item: FeedItem) -> Warning:
         instruction=_cap_text(info, "instruction"),
         area=area,
         geocodes=geocodes,
+        awareness_type=awareness_type,
+        awareness_level=awareness_level,
         link=feed_item.link,
         web=web,
+        event_clean=event_clean,
+        display_title=display_title,
+        display_line=display_line,
+        display_summary=display_summary,
+        display_impacts=display_impacts,
+        display_risk=display_risk,
     )
 
 
@@ -274,6 +322,92 @@ def build_summary_state(warnings: list[Warning]) -> str:
     return "Met Eireann: " + "; ".join(parts) + "."
 
 
+def clean_event(event: str | None) -> str:
+    """Return an event name without duplicated level/severity words."""
+
+    if not event:
+        return "Warning"
+
+    value = _normalize_whitespace(event)
+    changed = True
+    while changed:
+        changed = False
+        for prefix in SEVERITY_PREFIXES:
+            prefix_with_space = f"{prefix} "
+            if value.casefold().startswith(prefix_with_space.casefold()):
+                value = value[len(prefix_with_space) :].strip()
+                changed = True
+                break
+
+    return value or "Warning"
+
+
+def split_description_and_impacts(description: str | None) -> tuple[str, list[str]]:
+    """Return display summary text and impact bullets.
+
+    This creates display-only fields. The official Met Eireann description is
+    still exposed unchanged as ``description``.
+    """
+
+    if not description:
+        return "", []
+
+    heading_match: tuple[int, str] | None = None
+    description_folded = description.casefold()
+    for heading in IMPACT_HEADINGS:
+        idx = description_folded.find(heading.casefold())
+        if idx != -1 and (
+            heading_match is None or idx < heading_match[0]
+        ):
+            heading_match = (idx, heading)
+
+    if heading_match is None:
+        return _normalize_whitespace(description), []
+
+    idx, heading = heading_match
+    summary = _normalize_whitespace(description[:idx])
+    impacts_raw = description[idx + len(heading) :].strip()
+
+    return summary, _parse_impacts(impacts_raw)
+
+
+def build_display_line(
+    *,
+    level: str | None,
+    area: str | None,
+    onset: str | None,
+    expires: str | None,
+) -> str:
+    """Build a compact display line from generic CAP fields."""
+
+    parts = []
+    if level:
+        parts.append(level.title())
+    if area:
+        parts.append(_readable_area(area))
+
+    timing = _display_timing(onset, expires)
+    if timing:
+        parts.append(timing)
+
+    return " · ".join(part for part in parts if part)
+
+
+def build_display_risk(
+    *,
+    severity: str | None,
+    urgency: str | None,
+    certainty: str | None,
+) -> str:
+    """Build a compact risk line from generic CAP fields."""
+
+    return " · ".join(
+        _normalize_whitespace(part)
+        for part in (severity, urgency, certainty)
+        if part
+    )
+
+
 def normalize_url(url: str) -> str:
     """Normalize warning URLs so exact duplicate links compare cleanly."""
 
@@ -317,6 +451,19 @@ def _geocodes(info: ET.Element | None) -> list[str]:
         if value:
             values.append(value)
     return values
+
+
+def _parameters(info: ET.Element | None) -> dict[str, str]:
+    if info is None:
+        return {}
+
+    parameters = {}
+    for parameter in info.findall("cap:parameter", CAP_NS):
+        name = _cap_text(parameter, "valueName")
+        value = _cap_text(parameter, "value")
+        if name and value:
+            parameters[name] = value
+    return parameters
 
 
 def _level_from_cap(info: ET.Element | None, severity: str | None) -> str:
@@ -404,25 +551,24 @@ def _date_sort_value(value: str | None) -> float:
 
 
 def _summary_lines_for_warning(warning: Warning) -> list[str]:
-    event = warning.event or "Warning"
-    area = _readable_area(warning.area)
-    timing = _readable_timing(warning)
     duplicate_note = (
         f" Duplicate RSS/CAP items collapsed: {warning.duplicate_count}."
         if warning.duplicate_count
         else ""
     )
 
-    line = f"- {warning.level.title()} {event}"
-    if area:
-        line += f" - {area}"
-    if timing:
-        line += f" - {timing}"
+    line = f"- {warning.display_title}"
+    if warning.display_line:
+        line += f" - {warning.display_line}"
     line += f".{duplicate_note}"
 
     lines = [line]
-    if warning.description:
-        lines.append(f"  Detail: {warning.description}")
+    if warning.display_summary:
+        lines.append(f"  Detail: {warning.display_summary}")
+    if warning.display_impacts:
+        lines.append(f"  Impacts: {', '.join(warning.display_impacts)}.")
+    if warning.display_risk:
+        lines.append(f"  Risk: {warning.display_risk}.")
     return lines
 
 
@@ -432,15 +578,15 @@ def _readable_area(area: str | None) -> str:
     return re.sub(r"\s+", " ", area).strip()
 
 
-def _readable_timing(warning: Warning) -> str:
-    onset = _format_time(warning.onset)
-    expires = _format_time(warning.expires)
-    if onset and expires:
-        return f"from {onset} until {expires}"
-    if expires:
-        return f"until {expires}"
-    if onset:
-        return f"from {onset}"
+def _display_timing(onset: str | None, expires: str | None) -> str:
+    start = _format_time(onset)
+    end = _format_time(expires)
+    if start and end:
+        return f"{start} to {end}"
+    if end:
+        return f"until {end}"
+    if start:
+        return f"from {start}"
     return ""
 
 
@@ -451,6 +597,26 @@ def _format_time(value: str | None) -> str:
         return datetime.fromisoformat(value).strftime("%d %b %H:%M")
     except ValueError:
         return value
+
+
+def _parse_impacts(value: str) -> list[str]:
+    if not value:
+        return []
+
+    text = value.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"\s*[•]\s*", "\n", text)
+    text = re.sub(r"\s+[–-]\s+", "\n", text)
+
+    impacts = []
+    for line in text.splitlines():
+        impact = line.strip().lstrip("•-– ").strip()
+        if impact:
+            impacts.append(_normalize_whitespace(impact))
+    return impacts
+
+
+def _normalize_whitespace(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
 
 
 def _plural(count: int) -> str:

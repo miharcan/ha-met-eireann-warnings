@@ -24,10 +24,12 @@ parser = sys.modules[f"{PACKAGE}.parser"]
 
 build_summary_source = parser.build_summary_source
 build_summary_state = parser.build_summary_state
+clean_event = parser.clean_event
 deduplicate_warnings = parser.deduplicate_warnings
 highest_level = parser.highest_level
 parse_cap = parser.parse_cap
 parse_rss = parser.parse_rss
+split_description_and_impacts = parser.split_description_and_impacts
 warning_counts = parser.warning_counts
 
 
@@ -120,7 +122,12 @@ LAND_CAP = """<?xml version="1.0" encoding="UTF-8"?>
     <onset>2026-06-07T09:00:00+01:00</onset>
     <expires>2026-06-07T18:00:00+01:00</expires>
     <headline>Orange Rain Warning</headline>
-    <description>Heavy rain at times.</description>
+    <description>Heavy rain at times.
+
+Potential impacts:
+- Localised flooding
+- Poor visibility
+- Hazardous driving conditions</description>
     <parameter>
       <valueName>awareness_level</valueName>
       <value>3; orange; Severe</value>
@@ -166,6 +173,21 @@ def test_parse_cap_keeps_original_warning_text_and_marine_category():
         "South to southwest winds will reach force 6 or 7 at times"
     )
     assert warning.geocodes == ["EI807"]
+    assert warning.awareness_type == "1; Wind"
+    assert warning.awareness_level == "2; yellow; Moderate"
+    assert warning.event_clean == "Small Craft"
+    assert warning.display_title == (
+        "Small Craft warning from Malin Head to Howth Head to Mizen Head"
+    )
+    assert warning.display_line == (
+        "Yellow · from Malin Head to Howth Head to Mizen Head · "
+        "07 Jun 05:02 to 08 Jun 00:00"
+    )
+    assert warning.display_summary == (
+        "South to southwest winds will reach force 6 or 7 at times"
+    )
+    assert warning.display_impacts == []
+    assert warning.display_risk == "Moderate · Immediate · Likely"
 
 
 def test_deduplicate_warnings_collapses_near_duplicate_content():
@@ -223,9 +245,42 @@ def test_counts_highest_level_and_summary_source():
     assert "Breakdown: 1 land, 1 marine, 0 environmental." in summary_source
     assert "Marine:" in summary_source
     assert (
-        "- Yellow Small Craft - from Malin Head to Howth Head to Mizen Head"
+        "- Small Craft warning from Malin Head to Howth Head to Mizen Head - "
+        "Yellow · from Malin Head to Howth Head to Mizen Head"
         in summary_source
     )
     assert "Detail: South to southwest winds will reach force 6 or 7 at times" in (
         summary_source
     )
+    assert "Impacts: Localised flooding, Poor visibility" in summary_source
+
+
+def test_display_fields_are_generic_for_land_impacts():
+    item = parse_rss(RSS)[2]
+    warning = parse_cap(LAND_CAP, item)
+
+    assert warning.description.startswith("Heavy rain at times.")
+    assert "Potential impacts:" in warning.description
+    assert warning.event_clean == "Rain"
+    assert warning.display_title == "Orange Rain Warning"
+    assert warning.display_line == "Orange · Ireland · 07 Jun 09:00 to 07 Jun 18:00"
+    assert warning.display_summary == "Heavy rain at times."
+    assert warning.display_impacts == [
+        "Localised flooding",
+        "Poor visibility",
+        "Hazardous driving conditions",
+    ]
+    assert warning.display_risk == "Severe · Expected · Likely"
+
+
+def test_description_split_and_event_cleaning_are_generic():
+    summary, impacts = split_description_and_impacts(
+        "Thunderstorms likely. Possible impacts:\n"
+        "- Localised flooding\n"
+        "- Lightning damage"
+    )
+
+    assert summary == "Thunderstorms likely."
+    assert impacts == ["Localised flooding", "Lightning damage"]
+    assert clean_event("Yellow High Temperature") == "High Temperature"
+    assert clean_event("Severe Rain") == "Rain"
