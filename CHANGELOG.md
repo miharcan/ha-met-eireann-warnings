@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.1
+
+### Changed
+
+- `display_line` now omits the area when the official headline already contains
+  that area, avoiding repeated location lists in dashboard cards.
+
 ## v0.2.0
 
 ### Added

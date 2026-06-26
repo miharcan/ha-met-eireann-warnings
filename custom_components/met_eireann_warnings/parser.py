@@ -138,6 +138,7 @@ def parse_cap(cap_xml: str, feed_item: FeedItem) -> Warning:
     display_summary, display_impacts = split_description_and_impacts(description)
     display_title = headline or feed_item.title or event_clean
     display_line = build_display_line(
+        title=display_title,
         level=level,
         area=area,
         onset=_cap_text(info, "onset"),
@@ -373,6 +374,7 @@ def split_description_and_impacts(description: str | None) -> tuple[str, list[st
 
 def build_display_line(
     *,
+    title: str | None = None,
     level: str | None,
     area: str | None,
     onset: str | None,
@@ -383,7 +385,7 @@ def build_display_line(
     parts = []
     if level:
         parts.append(level.title())
-    if area:
+    if area and not _title_contains_area(title, area):
         parts.append(_readable_area(area))
 
     timing = _display_timing(onset, expires)
@@ -576,6 +578,24 @@ def _readable_area(area: str | None) -> str:
     if not area:
         return ""
     return re.sub(r"\s+", " ", area).strip()
+
+
+def _title_contains_area(title: str | None, area: str | None) -> bool:
+    if not title or not area:
+        return False
+
+    title_normalized = _norm_text(title)
+    area_normalized = _norm_text(area)
+    area_without_prefix = re.sub(
+        r"^(for|from)\s+",
+        "",
+        area_normalized,
+        count=1,
+    ).strip()
+
+    return area_normalized in title_normalized or (
+        bool(area_without_prefix) and area_without_prefix in title_normalized
+    )
 
 
 def _display_timing(onset: str | None, expires: str | None) -> str:

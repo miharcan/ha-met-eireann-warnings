@@ -179,10 +179,7 @@ def test_parse_cap_keeps_original_warning_text_and_marine_category():
     assert warning.display_title == (
         "Small Craft warning from Malin Head to Howth Head to Mizen Head"
     )
-    assert warning.display_line == (
-        "Yellow · from Malin Head to Howth Head to Mizen Head · "
-        "07 Jun 05:02 to 08 Jun 00:00"
-    )
+    assert warning.display_line == "Yellow · 07 Jun 05:02 to 08 Jun 00:00"
     assert warning.display_summary == (
         "South to southwest winds will reach force 6 or 7 at times"
     )
@@ -246,7 +243,7 @@ def test_counts_highest_level_and_summary_source():
     assert "Marine:" in summary_source
     assert (
         "- Small Craft warning from Malin Head to Howth Head to Mizen Head - "
-        "Yellow · from Malin Head to Howth Head to Mizen Head"
+        "Yellow · 07 Jun 05:02 to 08 Jun 00:00"
         in summary_source
     )
     assert "Detail: South to southwest winds will reach force 6 or 7 at times" in (
@@ -284,3 +281,24 @@ def test_description_split_and_event_cleaning_are_generic():
     assert impacts == ["Localised flooding", "Lightning damage"]
     assert clean_event("Yellow High Temperature") == "High Temperature"
     assert clean_event("Severe Rain") == "Rain"
+
+
+def test_display_line_omits_area_when_title_already_contains_area():
+    item = parse_rss(RSS)[2]
+    cap = LAND_CAP.replace(
+        "<headline>Orange Rain Warning</headline>",
+        (
+            "<headline>Thunderstorm warning for Cavan, Donegal, Monaghan, "
+            "Connacht, Longford</headline>"
+        ),
+    ).replace(
+        "<areaDesc>Ireland</areaDesc>",
+        "<areaDesc>Cavan, Donegal, Monaghan, Connacht, Longford</areaDesc>",
+    )
+    warning = parse_cap(cap, item)
+
+    assert warning.display_title == (
+        "Thunderstorm warning for Cavan, Donegal, Monaghan, Connacht, Longford"
+    )
+    assert warning.area == "Cavan, Donegal, Monaghan, Connacht, Longford"
+    assert warning.display_line == "Orange · 07 Jun 09:00 to 07 Jun 18:00"
